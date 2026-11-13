@@ -13,6 +13,7 @@ import type { AdvisorMessageDetails } from "../../advisor";
 import { InternalUrlRouter } from "../../internal-urls";
 import { COLLAB_PROMPT_MESSAGE_TYPE, type CollabPromptDetails } from "../../collab/protocol";
 import { settings } from "../../config/settings";
+import { advisorClosedLoopActive, closedLoopReplacedAnswers } from "./advisor-closed-loop";
 import { continuesConversation } from "./conversation-position";
 import { createAdvisorMessageCard } from "@oh-my-pi/pi-tui/chat/advisor-message";
 import { AssistantMessageComponent } from "@oh-my-pi/pi-tui/chat/assistant-message";
@@ -377,6 +378,8 @@ export class UiHelpers {
 						return [card];
 					}
 					if (message.customType === "advisor") {
+						// The closed loop keeps advisor notes out of the transcript.
+						if (advisorClosedLoopActive(this.ctx)) break;
 						const details = (message as CustomMessage<AdvisorMessageDetails>).details;
 						const card = new PresentedBlock(
 							createAdvisorMessageCard(details, () => this.ctx.toolOutputExpanded, theme),
@@ -465,8 +468,10 @@ export class UiHelpers {
 				const cached = options?.reuseSettledComponent
 					? this.ctx.transcriptMessageComponents.get(message)
 					: undefined;
+				// A suppressed component stays empty (see AssistantMessageComponent.suppress):
+				// a reply drawn again must get a new one.
 				const assistantComponent =
-					cached instanceof AssistantMessageComponent
+					cached instanceof AssistantMessageComponent && !cached.isSuppressed()
 						? cached
 						: createAssistantMessageComponent(
 								this.ctx,
@@ -636,6 +641,7 @@ export class UiHelpers {
 		// the ids are handed back to the controller after the loop (#10447).
 		const backgroundCallIds = new Set<string>();
 		const messages = sessionContext.messages;
+		const replacedAnswers = advisorClosedLoopActive(this.ctx) ? closedLoopReplacedAnswers(messages) : undefined;
 		const count = messages.length;
 		for (let i = 0; i < count; i++) {
 			// Yield BEFORE each message (except the first) rather than after: the
@@ -654,6 +660,7 @@ export class UiHelpers {
 				this.ctx.addMessageToChat(message, { reuseSettledComponent: options.reuseSettledComponents });
 				const lastChild = this.ctx.chatContainer.children[this.ctx.chatContainer.children.length - 1];
 				const assistantComponent = lastChild instanceof AssistantMessageComponent ? lastChild : undefined;
+				if (replacedAnswers?.has(message)) assistantComponent?.suppress();
 				if (assistantComponent) {
 					const usage = message.usage;
 					const explained = sessionContext.cacheMissExplainedAt?.[i] ?? false;

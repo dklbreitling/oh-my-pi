@@ -83,6 +83,21 @@ export const cfgAdvisorContinueSeverity = register({
 	},
 });
 
+export const cfgAdvisorClosedLoop = register({
+	id: "advisor.closedLoop",
+	protocolDefault: ["rpc", "acp"],
+	type: "boolean",
+	default: false,
+	ui: {
+		tab: "model",
+		group: "Advisor",
+		label: "Advisor Closed Loop",
+		description:
+			"Keep the advisor out of sight. The final review of each run completes before the run ends, a concern or blocker makes the agent revise its answer, and the interactive transcript shows only the settled answer: no advisor cards and no replaced answers.",
+		condition: "advisorEnabled",
+	},
+});
+
 export const cfgAdvisorReviewMode = register({
 	id: "advisor.reviewMode",
 	protocolDefault: ["rpc", "acp"],

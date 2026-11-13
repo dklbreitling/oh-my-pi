@@ -91,6 +91,7 @@ import { bridgeToolMap } from "../cursor-bridge-tools";
 import { estimateContextToolSchemaTokens } from "@oh-my-pi/pi-tui/status-line/context-usage";
 import type { PlanModeState } from "../plan-mode/state";
 import advisorBoundaryGuidance from "../prompts/advisor/boundary-guidance.md" with { type: "text" };
+import advisorClosedLoopGuidance from "../prompts/advisor/closed-loop-guidance.md" with { type: "text" };
 import advisorSystemPrompt from "../prompts/advisor/system.md" with { type: "text" };
 import type { SecretObfuscator } from "../secrets/obfuscator";
 import {
@@ -123,6 +124,7 @@ import { buildSessionMetadata } from "./session-metadata";
 import type { YieldQueue } from "./yield-queue";
 
 import {
+	cfgAdvisorClosedLoop,
 	cfgAdvisorContinueSeverity,
 	cfgAdvisorEvictStaleResults,
 	cfgAdvisorImmuneTurns,
@@ -249,6 +251,8 @@ export function planAdvisorUsageLimitWait(args: {
  */
 const ADVISOR_BOUNDARY_GUIDANCE = advisorBoundaryGuidance.trim();
 const ADVISOR_BOUNDARY_GUIDANCE_TURNS = 50;
+/** Prefixed to every advisor note the primary receives while `advisor.closedLoop` is on. */
+const ADVISOR_CLOSED_LOOP_GUIDANCE = advisorClosedLoopGuidance.trim();
 
 /**
  * Last genuine user-turn initiator in the transcript. Agent-attributed
@@ -705,6 +709,9 @@ export class SessionAdvisors {
 			const advisorContinuation =
 				continuation !== undefined && lastPrimaryUserMessage(messages) === continuation.userMessage;
 			if (!advisorContinuation || !this.#advisorPrimaryWillContinue) this.#advisorContinuation = undefined;
+			// The closed loop reviews every final answer, whatever the cadence; the
+			// revision it may start is shown without another review.
+			const finalReview = terminalBoundary && !advisorContinuation && this.#closedLoop();
 			// The roster-less default advisor follows the cadence settings live.
 			const defaultReviewMode = cfgAdvisorReviewMode.get(this.#host.settings);
 			const configuredInterval = cfgAdvisorReviewInterval.get(this.#host.settings);
@@ -724,7 +731,9 @@ export class SessionAdvisors {
 				const owed = advisorContinuation && terminalBoundary && advisor.reviewOwed;
 				if (terminalBoundary) advisor.reviewOwed = false;
 				const scheduled =
-					owed || (eligible && advisor.eligibleUpdates % (advisor.reviewInterval ?? defaultReviewInterval) === 0);
+					owed ||
+					finalReview ||
+					(eligible && advisor.eligibleUpdates % (advisor.reviewInterval ?? defaultReviewInterval) === 0);
 				if (scheduled) {
 					scheduledAdvisors ??= [];
 					scheduledAdvisors.push(advisor);
@@ -748,7 +757,10 @@ export class SessionAdvisors {
 			const globalSyncBacklog = cfgAdvisorSyncBacklog.get(this.#host.settings);
 			const waits: Promise<boolean>[] = [];
 			for (const scheduled of scheduledAdvisors) {
-				const syncBacklog = scheduled.syncBacklog ?? globalSyncBacklog;
+				// The closed loop holds the run open until its final review is in, so a
+				// note can revise the answer before the user sees it.
+				const syncBacklog =
+					terminalBoundary && this.#closedLoop() ? "strict" : (scheduled.syncBacklog ?? globalSyncBacklog);
 				if (syncBacklog === "off") continue;
 				const strict = syncBacklog === "strict";
 				const threshold = strict ? 1 : Number.parseInt(syncBacklog, 10);
@@ -1787,7 +1799,7 @@ export class SessionAdvisors {
 								display: true,
 								attribution: "agent",
 								timestamp: Date.now(),
-								content: formatAdvisorBatchContent(entries),
+								content: this.#closedLoopContent(formatAdvisorBatchContent(entries)),
 								details: { notes: entries } satisfies AdvisorMessageDetails,
 							} satisfies CustomMessage),
 				skipIdleFlush: true,
@@ -1857,7 +1869,7 @@ export class SessionAdvisors {
 		}
 		const channel = resolveAdvisorDeliveryChannel({
 			severity,
-			continueSeverity: cfgAdvisorContinueSeverity.get(this.#host.settings),
+			continueSeverity: this.#continueSeverity(),
 			autoResumeSuppressed: this.#advisorAutoResumeSuppressed,
 			preserveOnly: this.#preserveAdvisorAdvice,
 			// Key on the live agent-core loop, not session `isStreaming` (which also
@@ -1912,6 +1924,21 @@ export class SessionAdvisors {
 		);
 	}
 
+	/** Whether `advisor.closedLoop` keeps the advisor out of the user's sight (read live). */
+	#closedLoop(): boolean {
+		return cfgAdvisorClosedLoop.get(this.#host.settings);
+	}
+
+	/** The closed loop revises on any concern; otherwise `advisor.continueSeverity` decides. */
+	#continueSeverity(): AdvisorSeverity {
+		return this.#closedLoop() ? "concern" : cfgAdvisorContinueSeverity.get(this.#host.settings);
+	}
+
+	/** Agent-facing note content, with the closed-loop instruction when it applies. */
+	#closedLoopContent(content: string): string {
+		return this.#closedLoop() ? `${ADVISOR_CLOSED_LOOP_GUIDANCE}\n${content}` : content;
+	}
+
 	/**
 	 * Whether a note against a finished primary run may start one continuation:
 	 * its severity meets `advisor.continueSeverity` (even when the tail is not a
@@ -1922,7 +1949,7 @@ export class SessionAdvisors {
 	 * independent of the exact unwind state.
 	 */
 	#continuesFinishedRun(severity: AdvisorSeverity | undefined): boolean {
-		const continueSeverity = cfgAdvisorContinueSeverity.get(this.#host.settings);
+		const continueSeverity = this.#continueSeverity();
 		if (!meetsAdvisorSeverity(severity, continueSeverity)) return false;
 		const channel = resolveAdvisorDeliveryChannel({
 			severity,
@@ -1932,7 +1959,10 @@ export class SessionAdvisors {
 			streaming: false,
 			aborting: this.#host.abortInProgress(),
 			terminalAnswerNoQueuedWork: this.#hasTerminalTextAnswerWithoutQueuedWork(),
-			interruptImmuneTurnActive: this.#isAdvisorInterruptImmuneTurnActive(),
+			// The closed loop revises a rejected answer even right after a revision:
+			// the cooldown limits interruptions of work the user watches, and the
+			// closed loop's revision reviews are bounded on their own.
+			interruptImmuneTurnActive: !this.#closedLoop() && this.#isAdvisorInterruptImmuneTurnActive(),
 		});
 		return channel === "steer";
 	}
@@ -1966,7 +1996,8 @@ export class SessionAdvisors {
 	 *  - ACP bridges with `deferAgentInitiatedTurns`: the client cannot show an
 	 *    agent-initiated turn as busy, so idle triggers are refused (#5628 review).
 	 */
-	#deliverAdvisorBatch(notes: AdvisorNote[], content: string, steer: boolean, producer?: ActiveAdvisor): void {
+	#deliverAdvisorBatch(notes: AdvisorNote[], batch: string, steer: boolean, producer?: ActiveAdvisor): void {
+		const content = this.#closedLoopContent(batch);
 		const details = { notes } satisfies AdvisorMessageDetails;
 		if (steer) {
 			// Plan mode preserves would-be-steering advice as a visible card:

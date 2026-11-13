@@ -21,7 +21,7 @@ import chalk from "@oh-my-pi/pi-utils/chalk";
 import { LRUCache } from "@oh-my-pi/pi-utils/lru";
 import type { AssistantTextRenderer, AssistantTextRendering, AssistantThinkingRenderer } from "./extension-types";
 import { ensureThemeSync, getMarkdownTheme, getMarkdownThemeWithLinkTargets, getThemeEpoch, theme } from "../theme";
-import { card, col, elapsed, node, span, text } from "../native/describe";
+import { card, col, EMPTY_NODE, elapsed, node, span, text } from "../native/describe";
 import { hasTranscriptActions, runTranscriptAction, runTurnAction, turnHoldEntries } from "./transcript-actions";
 import type { DescribeContext, NativeChild, NativeNode, NativeUiEvent } from "../native/node";
 import { isNativeRendering } from "../native/state";
@@ -424,6 +424,8 @@ export class AssistantMessageComponent extends Container {
 	/** When each thinking block was seen streaming and when it stopped (native "Thought for 12s"), by content index. */
 	#thinkingClock = new Map<number, { start: number; end?: number; tokens: number }>();
 	#nativeViewVersion = 0;
+	/** Set by {@link suppress}: the message draws nothing. */
+	#suppressed = false;
 	readonly #native = new Memo();
 	/** Markdown nodes by key, reused while their text and streaming flag are unchanged. */
 	#nativeParts = new Map<string, { text: string; stream: boolean; node: NativeNode }>();
@@ -880,14 +882,38 @@ export class AssistantMessageComponent extends Container {
 		return this.#transcriptBlockFinalized;
 	}
 
-	/** Hold image and figure rendering until the completed block can enter immutable scrollback. */
+	/**
+	 * Hold image and figure rendering until the completed block can enter immutable scrollback.
+	 * A suppressed block waits on nothing: it never renders, so its figures never
+	 * resolve, and a pending block would pin transcript retirement for good.
+	 */
 	isTranscriptBlockPending(): boolean {
+		if (this.#suppressed) return false;
 		if (this.#showImages && this.#kittyConversionsAwaited.size > 0) return true;
 		for (const block of this.#figureBlocks.values()) if (block.pending) return true;
 		return false;
 	}
 
+	/**
+	 * Draw nothing for this message. The advisor closed loop suppresses a run's
+	 * assistant text while the run is in progress, and every reply but the
+	 * settled one when a session is replayed. Streaming updates still apply, so
+	 * the component stays consistent; it only renders no rows and no native node.
+	 * Suppression is permanent: a block can enter immutable scrollback while it
+	 * is empty, so the settled reply is drawn by a new component instead.
+	 */
+	suppress(): void {
+		if (this.#suppressed) return;
+		this.#suppressed = true;
+		this.#nativeViewVersion++;
+	}
+
+	isSuppressed(): boolean {
+		return this.#suppressed;
+	}
+
 	override render(width: number): readonly string[] {
+		if (this.#suppressed) return [];
 		const rows = super.render(width);
 		this.#publishStableSnapshot(rows, width);
 		return rows;
@@ -903,6 +929,7 @@ export class AssistantMessageComponent extends Container {
 	 * and a finished thought emits nothing.
 	 */
 	override describe(cx?: DescribeContext): NativeNode {
+		if (this.#suppressed) return EMPTY_NODE;
 		const media = cx?.supports("media") === true;
 		const tail = this.#answerMessage ? this.#thinkingTailIndex(this.#answerMessage) : undefined;
 		const rate =

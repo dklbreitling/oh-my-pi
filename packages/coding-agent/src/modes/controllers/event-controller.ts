@@ -59,6 +59,7 @@ import { SpeechEnhancer } from "../../tts/speech-enhancer";
 import { vocalizer } from "../../tts/vocalizer";
 import { canonicalizeMessage } from "@oh-my-pi/pi-tui/chat/thinking-display";
 import { type RunFlowStatus, setRunStatus } from "../../utils/run-status";
+import { advisorClosedLoopActive, isFinalAnswer } from "../utils/advisor-closed-loop";
 import { setTerminalTitleState } from "../../utils/title-generator";
 import {
 	assistantMessageLinkTargets,
@@ -265,6 +266,8 @@ export class EventController {
 	// with the other transcript anchors.
 	#orphanedToolCompletions = new Map<string, Extract<AgentSessionEvent, { type: "tool_execution_end" }>>();
 	#postToolAssistantComponents = new Map<string, AssistantMessageComponent>();
+	/** The advisor closed loop's latest final answer of the current run, drawn when the run ends. */
+	#closedLoopAnswer: AssistantMessage | undefined;
 	/** Reply blocks drawn per call from its frames' `details.replies`, in order; the count dedupes repeated frames. */
 	#toolReplyBlocks = new Map<string, AssistantMessageComponent[]>();
 	#lastAssistantComponent: AssistantMessageComponent | undefined = undefined;
@@ -871,6 +874,8 @@ export class EventController {
 			existing.updateContent(segment, opts);
 			return existing;
 		}
+		// Text after a tool call belongs to a message with tool calls: progress, so the
+		// advisor closed loop draws it live like any other.
 		const component = createAssistantMessageComponent(this.ctx, undefined, linkTargets, contentOffset);
 		component.updateContent(segment, opts);
 		this.#postToolAssistantComponents.set(toolCallId, component);
@@ -1412,6 +1417,9 @@ export class EventController {
 			this.#lastVisibleBlockCount = 0;
 			this.#streamedToolCallIdByIndex.clear();
 			this.ctx.streamingComponent = createAssistantMessageComponent(this.ctx);
+			// The closed loop draws a reply only once it completes: a progress update at
+			// its message_end, a final answer once the run's review is done (#finishAgentEnd).
+			if (advisorClosedLoopActive(this.ctx)) this.ctx.streamingComponent.suppress();
 			this.ctx.streamingMessage = event.message;
 			this.ctx.streamingComponent.pickReactionTarget(this.ctx.chatContainer.children);
 			this.ctx.chatContainer.addChild(this.ctx.streamingComponent);
@@ -1898,6 +1906,10 @@ export class EventController {
 				// instead speaks the whole final message at turn end.
 				if (mode === "assistant" || mode === "all") vocalizer.flush();
 			}
+		}
+		if (event.message.role === "assistant" && this.ctx.streamingComponent?.isSuppressed()) {
+			if (isFinalAnswer(event.message)) this.#closedLoopAnswer = event.message;
+			else this.ctx.addMessageToChat(event.message);
 		}
 		if (this.ctx.streamingComponent && event.message.role === "assistant") {
 			const generation = this.#dispatchGeneration;
@@ -2604,6 +2616,11 @@ export class EventController {
 		this.#asyncWaitEnd = undefined;
 		this.#setTerminalProgress(false);
 		this.ctx.statusLine.markActivityEnd();
+		// The run has settled, advisor revision included: draw its last final answer
+		// once, as a new block (a suppressed one may already be in scrollback).
+		const answer = this.#closedLoopAnswer;
+		this.#closedLoopAnswer = undefined;
+		if (answer) this.ctx.addMessageToChat(answer);
 		this.#lastAgentEndAt = Date.now();
 		this.#streamingReveal.stop();
 		this.#toolArgsReveal.flushAll();

@@ -812,6 +812,41 @@ describe("table charts in assistant Markdown", () => {
 		}
 	});
 
+	it("holds back no suppressed reply for its chart, so it cannot pin transcript retirement", async () => {
+		const protocol = TERMINAL.imageProtocol;
+		await initTheme(false);
+		setTerminalImageProtocol(ImageProtocol.Kitty);
+		try {
+			setTableCharts("always");
+			const message: AssistantMessage = {
+				role: "assistant",
+				content: [{ type: "text", text: answer }],
+				api: "anthropic-messages",
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				stopReason: "stop",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				timestamp: 1,
+			};
+			const shown = new AssistantMessageComponent(message);
+			expect(shown.isTranscriptBlockPending()).toBe(true);
+			// A suppressed reply never renders, so its chart never resolves.
+			const suppressed = new AssistantMessageComponent(message);
+			suppressed.suppress();
+			expect(suppressed.render(100)).toEqual([]);
+			expect(suppressed.isTranscriptBlockPending()).toBe(false);
+		} finally {
+			setTerminalImageProtocol(protocol);
+		}
+	});
+
 	it("publishes only settled rows while an answer with a table streams", async () => {
 		const protocol = TERMINAL.imageProtocol;
 		await initTheme(false);

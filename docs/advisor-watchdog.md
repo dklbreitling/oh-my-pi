@@ -261,6 +261,20 @@ deduplicated host warning, drops the affected batch, and resets the Advisor
 context to break the loop. Any successful Advisor turn resets the quarantine
 counter.
 
+## Closed loop
+
+Set `advisor.closedLoop: true` to keep the advisor out of sight. While it is on, these rules apply to every advisor:
+
+- **Final review in the run.** Every final answer is reviewed, even when `reviewInterval` would skip it, and the primary waits for the review as with `syncBacklog: strict`. Reviews of tool-loop steps follow the usual cadence, stay asynchronous, and deliver at the next model step. With `reviewMode: agent-end`, the final review is the only one.
+- **Revision on concerns.** A `concern` or `blocker` at the terminal boundary starts the agent's revision turn, whatever `advisor.continueSeverity` and `advisor.immuneTurns` say. A `nit` stays with the agent for its next turn.
+- **One revision.** The revision is shown without another review, so each user prompt costs at most one final review.
+- **No reply to the advisor.** Each note that reaches the primary starts with an instruction from `prompts/advisor/closed-loop-guidance.md`: the user sees neither advisor notes nor replaced answers, so the agent ends with a complete answer and does not mention the review.
+- **Progress, then the settled answer.** The interactive transcript draws an assistant message only when it is complete. A message with a tool call is a progress update and appears then. A final answer (text with no tool call) waits until the run ends; the run then draws its last final answer once, so an answer that a revision replaced is never shown. Advisor cards are not drawn. A replayed session follows the same rule per user turn.
+
+The setting changes only what the transcript draws and when the run ends. The session log, the primary's context, and the advisor's transcript are unchanged. Print mode, RPC, and ACP hosts receive every message as usual.
+
+The cost is latency: the final answer appears only after the final review and any revision are done, and no message streams live.
+
 ## WATCHDOG.md
 
 `WATCHDOG.md` is advisor-only guidance. It is appended to the advisor system prompt; it is not injected into the primary agent's normal context and does not behave like `AGENTS.md`, `RULES.md`, or other context files.
