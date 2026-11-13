@@ -2633,7 +2633,19 @@ export class AgentSession implements SettingsScope, AgentViewSession {
 			const keepPeerMessages =
 				boundary === "stop" && (this.#ircWakeHolds > 0 || this.#ircWakeTurnObserver !== undefined);
 			const thunks: AsideMessage[] = this.#irc.drainPending({ keepPeerMessages }).map(record => () => record);
-			thunks.push(...this.yieldQueue.drainLazy());
+			for (const thunk of this.yieldQueue.drainLazy()) {
+				// An advisor aside at the `stop` boundary reopens the finished run:
+				// reviews of the pre-fix work must not re-raise what it now fixes.
+				thunks.push(
+					boundary === "stop"
+						? () => {
+								const message = thunk();
+								if (message && isAdvisorCard(message)) this.#advisors.adviceReopenedFinishedRun(message);
+								return message;
+							}
+						: thunk,
+				);
+			}
 			// Mid-run todo reconciliation — evaluated at injection time so a turn
 			// that flips a todo just before this poll suppresses the nudge.
 			thunks.push(() => this.#todo.takeMidRunNudge());
