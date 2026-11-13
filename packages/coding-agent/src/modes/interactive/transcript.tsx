@@ -281,6 +281,7 @@ export class TranscriptPresenter {
 				signal<AssistantView["servedModelMismatch"] extends Signal<infer T> ? T : never>(undefined),
 			turnUsage: signal<AssistantView["turnUsage"] extends Signal<infer T> ? T : never>(undefined),
 			rewound: signal(false),
+			hidden: signal(false),
 			errorPinned: signal(false),
 			errorExpanded: signal(false),
 		};
@@ -309,6 +310,7 @@ export class TranscriptPresenter {
 			servedModelMismatch: signals.servedModelMismatch,
 			turnUsage: signals.turnUsage,
 			rewound: signals.rewound,
+			hidden: signals.hidden,
 			thinkingRate,
 			actions: this.#host.onAssistantAction !== undefined,
 			textRenderers: () => {

@@ -265,6 +265,8 @@ export interface AssistantView {
 	readonly turnUsage: Signal<TurnUsageSummary | undefined>;
 	/** A TTSR rule rewound this partial answer. */
 	readonly rewound: Signal<boolean>;
+	/** Draw nothing (the advisor closed loop); meant to last, see {@link AssistantMessageModel.hidden}. */
+	readonly hidden: Signal<boolean>;
 	/** The turn-ending error is pinned above the composer (the inline copy is suppressed while it shows). */
 	readonly errorPinned: Signal<boolean>;
 	/** Show the whole turn-ending error. */

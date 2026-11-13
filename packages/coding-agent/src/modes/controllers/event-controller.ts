@@ -54,6 +54,7 @@ import type { TranscriptBlock } from "../../ui/shell";
 import { toolEditMode } from "../../ui/tools/edit";
 import { PREVIEW_LIMITS, previewLine, TRUNCATE_LENGTHS } from "../../utils/render-utils";
 import { type RunFlowStatus, setRunStatus } from "../../utils/run-status";
+import { advisorClosedLoopActive, isFinalAnswer } from "../utils/advisor-closed-loop";
 import {
 	cfgCompletionNotify,
 	cfgDisplayCacheMissMarker,
@@ -318,6 +319,10 @@ export class EventController {
 	// with the other transcript anchors.
 	#orphanedToolCompletions = new Map<string, Extract<AgentSessionEvent, { type: "tool_execution_end" }>>();
 	#postToolAssistantComponents = new Map<string, AssistantView>();
+	/** The advisor closed loop's latest final answer of the current run, drawn when the run ends. */
+	#closedLoopAnswer: AssistantMessage | undefined;
+	/** The held answer drawn while the run waits on outside work, and its blocks: replaceable until the run ends. */
+	#closedLoopEarly: { answer: AssistantMessage; blocks: TranscriptBlock[] } | undefined;
 	/** Reply blocks drawn per call from its frames' `details.replies`, in order; the count dedupes repeated frames. */
 	#toolReplyBlocks = new Map<string, AssistantView[]>();
 	#lastAssistantComponent: AssistantView | undefined = undefined;
@@ -1417,6 +1422,9 @@ export class EventController {
 			}
 			this.#renderedCustomMessages.add(signature);
 			this.#resetReadGroup();
+			// A shown message other than an advisor card (a finished background job, a
+			// report) wakes the run for new work: the answer before it stays.
+			if (event.message.display && event.message.customType !== "advisor") this.#drawClosedLoopAnswer();
 			// A directly-invoked `/skill:` or writable-collab custom prompt is the
 			// run's initiating message (user attribution): seed the prompt→yield
 			// delta from it, the same as a user message.
@@ -1469,6 +1477,9 @@ export class EventController {
 			const signature = `${userText}\u0000${imageCount}`;
 
 			this.#resetReadGroup();
+			// A prompt steered into the run starts new work: the answer before it stays. An
+			// agent-attributed one (an advisor redirect) is part of the review instead.
+			if (event.message.attribution !== "agent" && !event.message.synthetic) this.#drawClosedLoopAnswer();
 			this.#resolveDisplaceablePoll();
 			this.#resolveDisplaceableTodo();
 			const wasOptimistic = this.ctx.optimisticUserMessageSignature === signature;
@@ -1531,6 +1542,9 @@ export class EventController {
 			this.#lastVisibleBlockCount = 0;
 			this.#streamedToolCallIdByIndex.clear();
 			const view = this.ctx.presentAssistant();
+			// The closed loop draws a reply only once it completes: a progress update at
+			// its message_end, a final answer once the run's review is done (#finishAgentEnd).
+			if (advisorClosedLoopActive(this.ctx)) view.hidden.set(true);
 			this.ctx.streaming = view;
 			this.ctx.streamingMessage = event.message;
 			const timeline = splitAssistantMessageToolTimeline(event.message);
@@ -1985,6 +1999,12 @@ export class EventController {
 			}
 		}
 		const streaming = this.ctx.streaming;
+		if (event.message.role === "assistant" && streaming?.hidden.peek()) {
+			// Not settled yet, so a progress update can still show in place; a final answer
+			// waits and is drawn as a new block (#drawClosedLoopAnswer).
+			if (isFinalAnswer(event.message)) this.#closedLoopAnswer = event.message;
+			else streaming.hidden.set(false);
+		}
 		if (streaming && event.message.role === "assistant") {
 			const generation = this.#dispatchGeneration;
 			this.ctx.streamingMessage = event.message;
@@ -2462,6 +2482,11 @@ export class EventController {
 	 */
 	async #handleAgentPause(event: Extract<AgentSessionEvent, { type: "agent_pause" }>): Promise<void> {
 		if (event.yielded) this.showAsyncWait();
+		if (event.awaiting) {
+			// The run now waits only on outside work (a background job, a child agent), maybe
+			// for hours: draw the held final answer now instead of at `agent_end`.
+			this.#drawClosedLoopAnswer({ early: true });
+		}
 		// The plan-mode reconciler queues a model switch to apply once the current
 		// stream ends; the continuation must not run on the old model.
 		await this.ctx.flushPendingModelSwitch();
@@ -2561,6 +2586,29 @@ export class EventController {
 		return { state: "done" };
 	}
 
+	/**
+	 * Draw the closed loop's held final answer and settle it: at the run's end, and when
+	 * new work starts (a background result or a steered prompt wakes the run). An early
+	 * draw (the run waits on outside work, or the user stopped it) stays replaceable until
+	 * then: the next draw removes it when a later answer replaced it.
+	 */
+	#drawClosedLoopAnswer(options?: { early?: boolean }): void {
+		const answer = this.#closedLoopAnswer;
+		const early = this.#closedLoopEarly;
+		if (early && early.answer !== answer) {
+			for (const block of early.blocks) this.ctx.shell.transcript.remove(block);
+			this.#closedLoopEarly = undefined;
+		}
+		if (answer && !this.#closedLoopEarly) {
+			const blocks = this.ctx.addMessageToChat(answer);
+			if (options?.early) this.#closedLoopEarly = { answer, blocks };
+		}
+		if (!options?.early) {
+			this.#closedLoopAnswer = undefined;
+			this.#closedLoopEarly = undefined;
+		}
+	}
+
 	async #finishAgentEnd(
 		event: Extract<AgentSessionEvent, { type: "agent_end" }>,
 		options?: { interrupted?: boolean },
@@ -2568,6 +2616,13 @@ export class EventController {
 		this.#showingAsyncWait = false;
 		this.#setTerminalProgress(false);
 		this.ctx.statusLine.markActivityEnd();
+		const last = event.messages.findLast((message): message is AssistantMessage => message.role === "assistant");
+		const userStopped = options?.interrupted || (last?.stopReason === "aborted" && isUserInterruptAbort(last));
+		// The run has settled, advisor revision included: draw its last final answer
+		// once, as a new block (a hidden one may already be in scrollback). A run the
+		// user stopped mid-revision keeps the draft replaceable: a continue that answers
+		// again replaces it, as the replayed transcript does.
+		this.#drawClosedLoopAnswer({ early: userStopped });
 		this.#lastAgentEndAt = Date.now();
 		this.#streamingReveal.stop();
 		this.#toolArgsReveal.flushAll();
@@ -2599,8 +2654,6 @@ export class EventController {
 		// The run yielded: a `/compact` queued behind it runs now. A run the user stopped (Esc, including
 		// the loop-mode pause) did not yield: the request goes back to the editor like other queued input.
 		if (this.ctx.yieldCompaction) {
-			const last = event.messages.findLast((message): message is AssistantMessage => message.role === "assistant");
-			const userStopped = options?.interrupted || (last?.stopReason === "aborted" && isUserInterruptAbort(last));
 			if (userStopped)
 				this.ctx.restoreCompactionQueueToEditor("Run stopped: queued compaction returned to the editor");
 			else this.ctx.runYieldCompaction();

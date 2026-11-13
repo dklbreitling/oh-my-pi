@@ -69,6 +69,7 @@ import {
 	materializeImageReferenceLinksSync,
 } from "../view-model/prompt/image-references";
 import { ExecRun } from "../../ui/transcript/exec-run";
+import { advisorClosedLoopActive, closedLoopReplacedAnswers } from "./advisor-closed-loop";
 import { continuesConversation } from "./conversation-position";
 import { displaceableBy } from "./displaceable";
 import { UpdateNotice } from "../interactive/update-notice";
@@ -359,6 +360,9 @@ export class UiHelpers {
 				// Drawn with their calls.
 				return [];
 			default: {
+				// The closed loop keeps advisor notes out of the main session's transcript.
+				const closedLoop = ctx === this.ctx && advisorClosedLoopActive(this.ctx);
+				if (closedLoop && message.role === "custom" && message.customType === "advisor") return [];
 				const block = ctx.presentMessage(message, options);
 				if (!block) return [];
 				ctx.transcriptBlocks.set(message, block);
@@ -526,6 +530,8 @@ export class UiHelpers {
 		const backgroundCallIds = new Set<string>();
 		const native = ctx.shell.native();
 		const messages = sessionContext.messages;
+		const closedLoop = ctx === this.ctx && advisorClosedLoopActive(this.ctx);
+		const replacedAnswers = closedLoop ? closedLoopReplacedAnswers(messages) : undefined;
 		const count = messages.length;
 		for (let i = 0; i < count; i++) {
 			// Yield BEFORE each message (except the first) rather than after: the
@@ -541,6 +547,7 @@ export class UiHelpers {
 				const assistant = ctx.presentAssistant(timeline.beforeTools, {
 					linkTargets: assistantMessageLinkTargets(message, linkTargets),
 				});
+				if (replacedAnswers?.has(message)) assistant.hidden.set(true);
 				ctx.transcriptBlocks.set(message, assistant.block);
 				const usage = message.usage;
 				const explained = sessionContext.cacheMissExplainedAt?.[i] ?? false;

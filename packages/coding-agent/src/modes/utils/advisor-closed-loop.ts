@@ -1,0 +1,67 @@
+import type { AgentMessage } from "@oh-my-pi/pi-agent-core";
+import type { AssistantMessage } from "@oh-my-pi/pi-ai";
+import { isUserTurnInitiator } from "../../session/messages";
+import { canonicalizeMessage } from "../../session/transcript/thinking-display";
+import { cfgAdvisorClosedLoop } from "../../advisor/settings";
+import type { Settings } from "../../config/settings";
+import type { AgentSession } from "../../session/agent-session";
+
+/**
+ * Display side of `advisor.closedLoop`: the interactive transcript shows the
+ * settled reply of each user turn and nothing of the review around it. The
+ * session, its log, and what the model sees do not change.
+ */
+export function advisorClosedLoopActive(ctx: { session: AgentSession; viewSession: unknown; settings: Settings }): boolean {
+	return (
+		cfgAdvisorClosedLoop.get(ctx.settings) && ctx.viewSession === ctx.session && ctx.session.isAdvisorEnabled()
+	);
+}
+
+/**
+ * A final answer: assistant text with no tool call. The closed loop holds these
+ * until the run's review is done; a message with a tool call is a progress
+ * update and is drawn when it completes.
+ */
+export function isFinalAnswer(message: AgentMessage): message is AssistantMessage {
+	return (
+		message.role === "assistant" &&
+		!message.content.some(block => block.type === "toolCall") &&
+		message.content.some(block => block.type === "text" && canonicalizeMessage(block.text))
+	);
+}
+
+/** Whether a message starts a user turn: a prompt the user wrote, or a custom prompt attributed to the user. */
+function startsUserTurn(message: AgentMessage): boolean {
+	if (message.role === "user") return message.attribution !== "agent" && !message.synthetic;
+	return message.role === "custom" && isUserTurnInitiator(message);
+}
+
+/**
+ * Whether a message starts new work, after which the answer before it stays: a user
+ * turn, or a shown message other than an advisor card (a finished background job, a
+ * report) that wakes the run. Matches the live draw in EventController.
+ */
+function startsNewWork(message: AgentMessage): boolean {
+	if (startsUserTurn(message)) return true;
+	if (message.role !== "custom" && message.role !== "hookMessage") return false;
+	return message.display && message.customType !== "advisor";
+}
+
+/**
+ * Final answers a replayed transcript draws as nothing: every final answer of a
+ * stretch of work except the last, which replaces them (an advisor revision).
+ */
+export function closedLoopReplacedAnswers(messages: readonly AgentMessage[]): Set<AgentMessage> {
+	const replaced = new Set<AgentMessage>();
+	let answers: AgentMessage[] = [];
+	for (const message of messages) {
+		if (startsNewWork(message)) {
+			for (const answer of answers.slice(0, -1)) replaced.add(answer);
+			answers = [];
+		} else if (isFinalAnswer(message)) {
+			answers.push(message);
+		}
+	}
+	for (const answer of answers.slice(0, -1)) replaced.add(answer);
+	return replaced;
+}

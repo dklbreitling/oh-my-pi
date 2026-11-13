@@ -1,0 +1,1 @@
+The user does not see advisor notes, and does not see an answer that a later answer replaces. Do not reply to the advisor, thank it, or mention the review. If a note changes your work, act on it, then end with your complete answer for the user, written so that it stands alone without your earlier answer.

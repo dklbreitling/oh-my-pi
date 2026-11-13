@@ -115,6 +115,12 @@ export interface AssistantMessageModel {
 	readonly turnUsage?: Reactive<TurnUsageSummary | undefined>;
 	/** A TTSR rule rewound this partial answer. */
 	readonly rewound?: Reactive<boolean>;
+	/**
+	 * Draw nothing, as before any of the reply arrived (the advisor closed loop holds
+	 * back a reply it may replace). Hiding is meant to last: an empty block can settle
+	 * into scrollback, so a held reply is drawn later as a new block.
+	 */
+	readonly hidden?: Reactive<boolean>;
 	/** Whether a host handles transcript actions (controls are only shown when one does). */
 	readonly actions?: Reactive<boolean>;
 	/** Live thinking speed (tok/s); shown from 0.05 up. */
@@ -292,7 +298,7 @@ export function AssistantMessageBlock(props: { model: AssistantMessageModel }): 
 	/** The reply as written (narration shown as answer) and as displayed (reaction lifted). */
 	const reply = computed(() => {
 		const raw = read(model.message);
-		if (!raw) return undefined;
+		if (!raw || flag(model.hidden, false)) return undefined;
 		const answer = presentNarrationAsAnswer(raw);
 		const transient = flag(model.transient, false);
 		let reaction: string | undefined;
@@ -520,9 +526,10 @@ export function AssistantMessageBlock(props: { model: AssistantMessageModel }): 
 	});
 
 	const answered = (): boolean => reply()?.answer.content.some(hasVisibleText) ?? false;
-	const rewound = (): boolean => flag(model.rewound, false);
+	const hidden = (): boolean => flag(model.hidden, false);
+	const rewound = (): boolean => !hidden() && flag(model.rewound, false);
 	const actions = (): boolean => flag(model.actions, false);
-	const usage = (): TurnUsageSummary | undefined => read(model.turnUsage);
+	const usage = (): TurnUsageSummary | undefined => (hidden() ? undefined : read(model.turnUsage));
 	const slots = computed(() => [...parts().keys()], { equals: sameSlots });
 	const thinkingDots = (): { tokens: number; rate: number } | undefined => {
 		const current = reply();
@@ -586,11 +593,11 @@ export function AssistantMessageBlock(props: { model: AssistantMessageModel }): 
 				)}
 			</For>
 			{() => {
-				const info = read(model.servedModelMismatch);
+				const info = hidden() ? undefined : read(model.servedModelMismatch);
 				return info && <ServedModelMarker info={info} />;
 			}}
 			{() => {
-				const info = read(model.cacheInvalidation);
+				const info = hidden() ? undefined : read(model.cacheInvalidation);
 				return info && <CacheMissMarker info={info} />;
 			}}
 			{() => rewound() && <badge key="rewound" text="↺ rewound" tone="muted" role="omp.assistant.rewound-tag" />}
