@@ -2735,6 +2735,11 @@ export class AgentSession implements SettingsScope, AgentViewSession {
 			const thunks: AsideMessage[] = queued.map(entry => () => {
 				const message = typeof entry === "function" ? entry() : entry;
 				if (message) hasDelivery = true;
+				// An advisor aside at the `stop` boundary reopens the finished run:
+				// reviews of the pre-fix work must not re-raise what it now fixes.
+				if (boundary === "stop" && message && isAdvisorCard(message)) {
+					this.#advisors.adviceReopenedFinishedRun(message);
+				}
 				return message;
 			});
 			// A guide follows work, or rides an actual delivery; a stale queued entry cannot extend the turn.

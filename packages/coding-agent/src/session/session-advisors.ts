@@ -1938,6 +1938,25 @@ export class SessionAdvisors {
 	}
 
 	/**
+	 * An advisor aside the loop injected at its `stop` boundary reopens a run the
+	 * primary had finished, like an idle steer does (see {@link #deliverAdvisorBatch}).
+	 * Cancel every review of the work it revises that is still queued or running,
+	 * so none can re-raise what is being fixed. Unlike a steer, the producing
+	 * review is not kept: the aside waited for this boundary, so the review now
+	 * in flight may already be the stale one. An advisor that lost a review, or
+	 * produced the note, reviews the continuation's terminal boundary instead.
+	 */
+	adviceReopenedFinishedRun(card: CustomMessage): void {
+		const notes = (card.details as AdvisorMessageDetails | undefined)?.notes ?? [];
+		const producers = new Set(notes.map(note => note.advisor));
+		this.#advisorContinuation = { userMessage: lastPrimaryUserMessage(this.#host.agent.state.messages) };
+		for (const advisor of this.#advisors) {
+			const cancelled = advisor.runtime.supersede(false);
+			if (cancelled || producers.has(advisor.slug ? advisor.name : undefined)) advisor.reviewOwed = true;
+		}
+	}
+
+	/**
 	 * Deliver one advisor batch as a steer, or as a visible card when steering
 	 * is technically impossible. A steered batch only continues the run when the
 	 * session can actually start (or is already running) a turn. One idle case
