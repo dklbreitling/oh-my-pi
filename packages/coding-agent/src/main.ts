@@ -279,6 +279,9 @@ async function checkForNewVersion(currentVersion: string): Promise<string | unde
 	if (!cfgStartupCheckUpdate.get(settings) && !cfgUpdateAuto.get(settings)) {
 		return;
 	}
+	// A patched build that a wrapper launches (for example `my-omp`) is rebuilt by that
+	// wrapper's owner. `omp update` would update the stock `omp` in PATH, not this build.
+	if (process.env.OMP_SKIP_UPDATE_CHECK) return;
 	try {
 		// Checkouts update through git and a manager (Tern) updates its omp itself:
 		// "run omp update" would be wrong advice for both.
