@@ -1402,6 +1402,9 @@ const streamOpenAICompletionsOnce = (
 				onGraceEnd: () => requestAbortController.abort(),
 				awaitDrainOnReturn: options?.waitForTerminalDrain,
 			});
+			// Model id the chunks report. A router (Cloudflare AI Gateway `cloudflare/auto`, …)
+			// reports the model it selected there, not the requested alias.
+			let reportedModel: string | undefined;
 			for await (const chunk of terminalAwareStream) {
 				if (!chunk || typeof chunk !== "object") continue;
 				// Rate-limit/overload bodies sent inside an HTTP 200 stream (Azure,
@@ -1434,6 +1437,9 @@ const streamOpenAICompletionsOnce = (
 					const upstreamProvider = (chunk as ProviderAttributedChatCompletionChunk).provider;
 					output.upstreamProvider =
 						typeof upstreamProvider === "string" && upstreamProvider.length > 0 ? upstreamProvider : undefined;
+				}
+				if (!reportedModel && typeof chunk.model === "string" && chunk.model.length > 0) {
+					reportedModel = chunk.model;
 				}
 
 				if (chunk.usage) {
@@ -1798,6 +1804,13 @@ const streamOpenAICompletionsOnce = (
 			} else {
 				finishCurrentBlock(currentBlock);
 				finishPendingToolCallBlocks();
+			}
+
+			// A model named by a signed reasoning block is more exact, so it wins.
+			// `detectServedModelMismatch` treats a snapshot or gateway-prefixed form
+			// of the requested id as the same model.
+			if (!output.upstreamModel && reportedModel && reportedModel !== model.id) {
+				output.upstreamModel = reportedModel;
 			}
 
 			// Some OpenAI-compatible hosts stream structured `tool_calls` but report

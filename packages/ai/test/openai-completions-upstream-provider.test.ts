@@ -70,4 +70,50 @@ describe("openai-completions upstream provider capture", () => {
 
 		expect(result.upstreamProvider).toBeUndefined();
 	});
+
+	// Contract: a router alias (`cloudflare/auto`) names the model it selected in each
+	// chunk's `model` field. That id becomes `upstreamModel`, so usage can be priced and
+	// attributed to the model that served the turn.
+	it("records the model a router reports when it differs from the requested id", async () => {
+		const router = { ...model, id: "cloudflare/auto" } satisfies Model<"openai-completions">;
+		const routed = (extra: Record<string, unknown>) => chunk({ model: "claude-haiku-5-5", ...extra });
+		const fetchMock: FetchImpl = () =>
+			Promise.resolve(
+				createSseResponse([
+					routed({ choices: [{ index: 0, delta: { content: "Hi" } }] }),
+					routed({
+						choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+						usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+					}),
+				]),
+			);
+
+		const result = await streamOpenAICompletions(router, baseContext(), {
+			apiKey: "test-key",
+			fetch: fetchMock,
+		}).result();
+
+		expect(result.model).toBe("cloudflare/auto");
+		expect(result.upstreamModel).toBe("claude-haiku-5-5");
+	});
+
+	it("leaves upstreamModel undefined when the chunks report the requested id", async () => {
+		const fetchMock: FetchImpl = () =>
+			Promise.resolve(
+				createSseResponse([
+					chunk({ choices: [{ index: 0, delta: { content: "Hi" } }] }),
+					chunk({
+						choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+						usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+					}),
+				]),
+			);
+
+		const result = await streamOpenAICompletions(model, baseContext(), {
+			apiKey: "test-key",
+			fetch: fetchMock,
+		}).result();
+
+		expect(result.upstreamModel).toBeUndefined();
+	});
 });
