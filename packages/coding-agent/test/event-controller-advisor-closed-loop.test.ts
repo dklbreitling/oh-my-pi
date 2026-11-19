@@ -110,6 +110,48 @@ describe("EventController advisor closed loop", () => {
 		expect(settled).not.toContain(NOTE);
 	});
 
+	// A run that waits on a background job can stay open for hours; its answer must not.
+	it("draws the held answer while the run waits on outside work, once", async () => {
+		const { controller, ctx } = createFixture();
+		const rendered = () => Bun.stripANSI(ctx.chatContainer.render(120).join("\n"));
+		const pause = { type: "agent_pause", messages: [], yielded: true, awaiting: true } as unknown as AgentSessionEvent;
+
+		await controller.handleEvent({ type: "agent_start" } as AgentSessionEvent);
+		await stream(controller, answer(SETTLED));
+		await controller.handleEvent(pause);
+		expect(rendered().split(SETTLED)).toHaveLength(2);
+
+		await controller.handleEvent({ type: "agent_end", messages: [] } as unknown as AgentSessionEvent);
+		expect(rendered().split(SETTLED)).toHaveLength(2);
+	});
+
+	it("replaces an answer drawn during the wait with a later revision", async () => {
+		const { controller, ctx } = createFixture();
+		const rendered = () => Bun.stripANSI(ctx.chatContainer.render(120).join("\n"));
+		const pause = { type: "agent_pause", messages: [], yielded: true, awaiting: true } as unknown as AgentSessionEvent;
+
+		await controller.handleEvent({ type: "agent_start" } as AgentSessionEvent);
+		await stream(controller, answer(DRAFT));
+		await controller.handleEvent(pause);
+		expect(rendered()).toContain(DRAFT);
+		await stream(controller, answer(SETTLED));
+		await controller.handleEvent({ type: "agent_end", messages: [] } as unknown as AgentSessionEvent);
+
+		const settled = rendered();
+		expect(settled).not.toContain(DRAFT);
+		expect(settled.split(SETTLED)).toHaveLength(2);
+	});
+
+	it("keeps the answer held when the pause resumes at once", async () => {
+		const { controller, ctx } = createFixture();
+		const pause = { type: "agent_pause", messages: [], yielded: true, awaiting: false } as unknown as AgentSessionEvent;
+
+		await controller.handleEvent({ type: "agent_start" } as AgentSessionEvent);
+		await stream(controller, answer(DRAFT));
+		await controller.handleEvent(pause);
+		expect(Bun.stripANSI(ctx.chatContainer.render(120).join("\n"))).not.toContain(DRAFT);
+	});
+
 	it("draws answers live when the closed loop is off", async () => {
 		resetSettingsForTest();
 		await Settings.init({ inMemory: true, overrides: { "display.smoothStreaming": false } });

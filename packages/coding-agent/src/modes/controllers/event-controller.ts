@@ -281,6 +281,12 @@ export class EventController {
 	#postToolAssistantComponents = new Map<string, AssistantMessageComponent>();
 	/** The advisor closed loop's latest final answer of the current run, drawn when the run ends. */
 	#closedLoopAnswer: AssistantMessage | undefined;
+	/**
+	 * The held answer drawn early because the run waits on outside work, and its blocks.
+	 * The run's `agent_end` keeps them when that answer is still the last one, and removes
+	 * them when a later answer replaced it.
+	 */
+	#closedLoopEarly: { answer: AssistantMessage; components: Component[] } | undefined;
 	/** Reply blocks drawn per call from its frames' `details.replies`, in order; the count dedupes repeated frames. */
 	#toolReplyBlocks = new Map<string, AssistantMessageComponent[]>();
 	#lastAssistantComponent: AssistantMessageComponent | undefined = undefined;
@@ -2447,6 +2453,11 @@ export class EventController {
 	 * child agent resumes it (`yielded: true`), or the run's `agent_end` closes it.
 	 */
 	async #handleAgentPause(event: Extract<AgentSessionEvent, { type: "agent_pause" }>): Promise<void> {
+		if (event.awaiting) {
+			// The run now waits only on outside work (a background job, a child agent), maybe
+			// for hours: draw the held final answer now instead of at `agent_end`.
+			this.#drawClosedLoopAnswer({ early: true });
+		}
 		if (event.yielded) this.showAsyncWait();
 		// The plan-mode reconciler queues a model switch to apply once the current
 		// stream ends; the continuation must not run on the old model.
@@ -2552,6 +2563,31 @@ export class EventController {
 		return { state: "done" };
 	}
 
+	/**
+	 * Draw the closed loop's held final answer. An early draw (the run waits on outside
+	 * work) stays replaceable: the next draw removes it when a later answer replaced it.
+	 */
+	#drawClosedLoopAnswer(options?: { early?: boolean }): void {
+		const answer = this.#closedLoopAnswer;
+		const early = this.#closedLoopEarly;
+		if (early && early.answer !== answer) {
+			for (const component of early.components) this.ctx.chatContainer.removeChild(component);
+			this.#closedLoopEarly = undefined;
+		}
+		if (answer && !this.#closedLoopEarly) {
+			const before = new Set(this.ctx.chatContainer.children);
+			this.ctx.addMessageToChat(answer);
+			if (options?.early) {
+				const components = this.ctx.chatContainer.children.filter(child => !before.has(child));
+				this.#closedLoopEarly = { answer, components };
+			}
+		}
+		if (!options?.early) {
+			this.#closedLoopAnswer = undefined;
+			this.#closedLoopEarly = undefined;
+		}
+	}
+
 	async #finishAgentEnd(
 		event: Extract<AgentSessionEvent, { type: "agent_end" }>,
 		options?: { interrupted?: boolean },
@@ -2561,9 +2597,7 @@ export class EventController {
 		this.ctx.statusLine.markActivityEnd();
 		// The run has settled, advisor revision included: draw its last final answer
 		// once, as a new block (a suppressed one may already be in scrollback).
-		const answer = this.#closedLoopAnswer;
-		this.#closedLoopAnswer = undefined;
-		if (answer) this.ctx.addMessageToChat(answer);
+		this.#drawClosedLoopAnswer();
 		this.#lastAgentEndAt = Date.now();
 		this.#streamingReveal.stop();
 		this.#toolArgsReveal.flushAll();
