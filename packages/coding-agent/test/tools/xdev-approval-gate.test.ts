@@ -74,6 +74,7 @@ function runnerWith(sessionManager: SessionManager, select: ExtensionUIContext["
 			rerenderMessage: () => {},
 			refreshTranscript: () => {},
 			getLinkClicksAvailable: () => false,
+			getToolActivityHidden: () => false,
 			setStatus: () => {},
 			setWorkingMessage: () => {},
 			setWidget: () => {},

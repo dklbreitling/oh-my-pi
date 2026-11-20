@@ -2837,6 +2837,7 @@ describe("ExtensionRunner", () => {
 					rerenderMessage: () => {},
 					refreshTranscript: () => {},
 					getLinkClicksAvailable: () => false,
+					getToolActivityHidden: () => false,
 					setStatus: () => {},
 					setWorkingMessage: () => {},
 					setWidget: () => {},

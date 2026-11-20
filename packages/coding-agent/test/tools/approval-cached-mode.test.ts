@@ -367,6 +367,7 @@ describe("always-ask-cached wrapper cycle", () => {
 				rerenderMessage: () => {},
 				refreshTranscript: () => {},
 				getLinkClicksAvailable: () => false,
+				getToolActivityHidden: () => false,
 				setStatus: () => {},
 				setWorkingMessage: () => {},
 				setWidget: () => {},
