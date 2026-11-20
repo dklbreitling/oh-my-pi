@@ -1055,6 +1055,7 @@ Supported:
 - `rerenderMessage(timestamp)`: draws the assistant reply with that `message.timestamp` again, re-running the [assistant text renderers](#assistant-text-renderer); a no-op while `extensionRenderers.assistantText` is off
 - `refreshTranscript(ids)`: asks the [transcript presenters](#transcript-presenter) again for the blocks with those ids and redraws the ones whose display changed
 - `getLinkClicksAvailable()`: whether picking a [claimed link](#extension-link-schemes), by its hint tag or a click, raises `link_activate` right now
+- `getToolActivityHidden()`: whether the transcript hides tool calls and results right now (`display.hideToolActivity`, a change made in this session included); false outside interactive mode
 
 Current no-op methods in this controller:
 

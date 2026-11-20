@@ -554,6 +554,7 @@ const noOpUIContext: ExtensionUIContext = {
 	// A subagent's runner has no UI of its own, yet its links are picked from the interactive screen
 	// while its transcript is focused: answer as the interactive UI does.
 	getLinkClicksAvailable: extensionLinkClicksAvailable,
+	getToolActivityHidden: () => false,
 	setStatus: () => {},
 	setWorkingMessage: () => {},
 	setWidget: () => {},

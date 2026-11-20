@@ -971,6 +971,7 @@ export function createAcpExtensionUiContext(
 		rerenderMessage: () => {},
 		refreshTranscript: () => {},
 		getLinkClicksAvailable: () => false,
+		getToolActivityHidden: () => false,
 		setStatus: () => {},
 		setWorkingMessage: () => {},
 		setWidget: () => {},

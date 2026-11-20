@@ -260,6 +260,7 @@ export class ExtensionUiController {
 			rerenderMessage: timestamp => this.#rerenderAssistantMessage(timestamp),
 			refreshTranscript: ids => this.ctx.refreshTranscriptPresentation(new Set(ids)),
 			getLinkClicksAvailable: extensionLinkClicksAvailable,
+			getToolActivityHidden: () => this.ctx.hideToolActivity,
 			setStatus: (key, text) => this.setHookStatus(key, text),
 			setWorkingMessage: message => this.ctx.setWorkingMessage(message),
 			setWidget: (key, content, options) => this.setHookWidget(key, content, options),

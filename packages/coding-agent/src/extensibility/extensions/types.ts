@@ -455,6 +455,13 @@ export interface ExtensionUIContext {
 	 */
 	getLinkClicksAvailable(): boolean;
 
+	/**
+	 * True while the interactive transcript hides tool activity (`display.hideToolActivity`,
+	 * including a change made in this session): the user sees no tool calls or results, only
+	 * the text around them. False everywhere else.
+	 */
+	getToolActivityHidden(): boolean;
+
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
 

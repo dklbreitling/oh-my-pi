@@ -777,6 +777,7 @@ const noOpUIContext: ExtensionUIContext = {
 	rerenderMessage: () => {},
 	refreshTranscript: () => {},
 	getLinkClicksAvailable: () => false,
+	getToolActivityHidden: () => false,
 	setStatus: () => {},
 	setWorkingMessage: () => {},
 	setWidget: () => {},
