@@ -142,6 +142,32 @@ describe("EventController advisor closed loop", () => {
 		expect(settled.split(SETTLED)).toHaveLength(2);
 	});
 
+	// A watcher's results wake the run again and again: each update is new work, not a revision.
+	it("keeps an answer drawn during the wait when a background result wakes the run", async () => {
+		const { controller, ctx } = createFixture();
+		const rendered = () => Bun.stripANSI(ctx.chatContainer.render(120).join("\n"));
+		const pause = { type: "agent_pause", messages: [], yielded: true, awaiting: true } as unknown as AgentSessionEvent;
+		const jobResult = {
+			role: "custom",
+			customType: "async-result",
+			content: "JOB RESULT",
+			display: true,
+			attribution: "agent",
+			timestamp: 3,
+		} as CustomMessage;
+
+		await controller.handleEvent({ type: "agent_start" } as AgentSessionEvent);
+		await stream(controller, answer(DRAFT));
+		await controller.handleEvent(pause);
+		await controller.handleEvent({ type: "message_start", message: jobResult } as AgentSessionEvent);
+		await stream(controller, answer(SETTLED));
+		await controller.handleEvent({ type: "agent_end", messages: [] } as unknown as AgentSessionEvent);
+
+		const settled = rendered();
+		expect(settled.split(DRAFT)).toHaveLength(2);
+		expect(settled.split(SETTLED)).toHaveLength(2);
+	});
+
 	it("keeps the answer held when the pause resumes at once", async () => {
 		const { controller, ctx } = createFixture();
 		const pause = { type: "agent_pause", messages: [], yielded: true, awaiting: false } as unknown as AgentSessionEvent;

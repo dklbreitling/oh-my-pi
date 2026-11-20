@@ -1325,6 +1325,9 @@ export class EventController {
 			}
 			this.#renderedCustomMessages.add(signature);
 			this.#resetReadGroup();
+			// A shown message other than an advisor card (a finished background job, a
+			// report) wakes the run for new work: the answer before it stays.
+			if (event.message.display && event.message.customType !== "advisor") this.#drawClosedLoopAnswer();
 			// A directly-invoked `/skill:` or writable-collab custom prompt is the
 			// run's initiating message (user attribution): seed the prompt→yield
 			// delta from it, the same as a user message.
@@ -1378,6 +1381,9 @@ export class EventController {
 			const signature = `${userText}\u0000${imageCount}`;
 
 			this.#resetReadGroup();
+			// A prompt steered into the run starts new work: the answer before it stays. An
+			// agent-attributed one (an advisor redirect) is part of the review instead.
+			if (event.message.attribution !== "agent" && !event.message.synthetic) this.#drawClosedLoopAnswer();
 			this.#resolveDisplaceablePoll();
 			this.#resolveDisplaceableTodo();
 			const wasOptimistic = this.ctx.optimisticUserMessageSignature === signature;
@@ -2564,8 +2570,10 @@ export class EventController {
 	}
 
 	/**
-	 * Draw the closed loop's held final answer. An early draw (the run waits on outside
-	 * work) stays replaceable: the next draw removes it when a later answer replaced it.
+	 * Draw the closed loop's held final answer and settle it: at the run's end, and when
+	 * new work starts (a background result or a steered prompt wakes the run). An early
+	 * draw (the run waits on outside work) stays replaceable until then: the next draw
+	 * removes it when a later answer replaced it.
 	 */
 	#drawClosedLoopAnswer(options?: { early?: boolean }): void {
 		const answer = this.#closedLoopAnswer;

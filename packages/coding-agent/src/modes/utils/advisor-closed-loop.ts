@@ -35,14 +35,25 @@ function startsUserTurn(message: AgentMessage): boolean {
 }
 
 /**
+ * Whether a message starts new work, after which the answer before it stays: a user
+ * turn, or a shown message other than an advisor card (a finished background job, a
+ * report) that wakes the run. Matches the live draw in EventController.
+ */
+function startsNewWork(message: AgentMessage): boolean {
+	if (startsUserTurn(message)) return true;
+	if (message.role !== "custom" && message.role !== "hookMessage") return false;
+	return message.display && message.customType !== "advisor";
+}
+
+/**
  * Final answers a replayed transcript draws as nothing: every final answer of a
- * user turn except the last, which replaces them (an advisor revision).
+ * stretch of work except the last, which replaces them (an advisor revision).
  */
 export function closedLoopReplacedAnswers(messages: readonly AgentMessage[]): Set<AgentMessage> {
 	const replaced = new Set<AgentMessage>();
 	let answers: AgentMessage[] = [];
 	for (const message of messages) {
-		if (startsUserTurn(message)) {
+		if (startsNewWork(message)) {
 			for (const answer of answers.slice(0, -1)) replaced.add(answer);
 			answers = [];
 		} else if (isFinalAnswer(message)) {

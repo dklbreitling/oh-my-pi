@@ -54,4 +54,11 @@ describe("advisor closed loop transcript", () => {
 		const redirect = { ...user("advisor redirect"), attribution: "agent" } as AgentMessage;
 		expect([...closedLoopReplacedAnswers([user("go"), draft, redirect, revision])]).toEqual([draft]);
 	});
+
+	it("keeps an answer that a background result follows", () => {
+		const before = reply("pipeline passed");
+		const after = reply("highstate passed");
+		const jobResult = { ...advisorCard("job done"), customType: "async-result" } as AgentMessage;
+		expect([...closedLoopReplacedAnswers([user("watch"), before, jobResult, after])]).toEqual([]);
+	});
 });
