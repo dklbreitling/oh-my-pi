@@ -254,7 +254,7 @@ import {
 import { describeUsageFallback } from "./session/retry-fallback-reason";
 import { kUsageLimitRequestProvider } from "./session/turn-recovery";
 import { getReadableCompactionEntry, getRestorableSessionModels } from "./session/session-context";
-import { completionRecord } from "./session/model-usage-journal";
+import { completionRecord, replyUsageFields } from "./session/model-usage-journal";
 import { SessionManager } from "./session/session-manager";
 import { cfgOffline } from "./config/auxiliary-model-policy";
 import { SHAPE_RULE } from "./spotlight/shape";
@@ -2608,15 +2608,7 @@ async function createAgentSessionScoped(options: CreateAgentSessionOptions): Pro
 				sessionManager.appendModelUsage(
 					{
 						purpose,
-						api: message.api,
-						provider: message.provider,
-						model: message.model,
-						...(message.upstreamModel ? { upstreamModel: message.upstreamModel } : {}),
-						usage: message.usage,
-						stopReason: message.stopReason,
-						errorMessage: message.errorMessage,
-						duration: message.duration,
-						ttft: message.ttft,
+						...replyUsageFields(message),
 						completion: completionRecord(userPrompt, message),
 					},
 					{ sessionId: sessionManager.getSessionId(), parentId: sessionManager.getLeafId() },

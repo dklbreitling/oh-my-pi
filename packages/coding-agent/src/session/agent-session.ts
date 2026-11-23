@@ -522,7 +522,7 @@ import {
 	type SessionDumpLiveState,
 } from "./session-dump-format";
 import { collectSubSessions, type SubSession } from "./sub-sessions";
-import { completionRecord, journalCompletion } from "./model-usage-journal";
+import { completionRecord, journalCompletion, replyUsageFields } from "./model-usage-journal";
 import type { BranchSummaryEntry, NewSessionOptions, SessionEntry } from "./session-entries";
 import { SessionHandoff, type SessionHandoffHost } from "./session-handoff";
 import {
@@ -6786,15 +6786,7 @@ export class AgentSession implements SettingsScope, AgentViewSession {
 			this.sessionManager.appendModelUsage(
 				{
 					purpose: extensionOverride ? "cache-warm:extension-override" : "cache-warm",
-					api: message.api,
-					provider: message.provider,
-					model: message.model,
-					...(message.upstreamModel ? { upstreamModel: message.upstreamModel } : {}),
-					usage: message.usage,
-					stopReason: message.stopReason,
-					errorMessage: message.errorMessage,
-					duration: message.duration,
-					ttft: message.ttft,
+					...replyUsageFields(message),
 					...(refresh ? { cacheRefresh: refresh } : {}),
 				},
 				{ sessionId: this.sessionId, parentId: this.sessionManager.getLeafId() },
@@ -12617,15 +12609,7 @@ export class AgentSession implements SettingsScope, AgentViewSession {
 			this.sessionManager.appendModelUsage(
 				{
 					purpose,
-					api: message.api,
-					provider: message.provider,
-					model: message.model,
-					...(message.upstreamModel ? { upstreamModel: message.upstreamModel } : {}),
-					usage: message.usage,
-					stopReason: message.stopReason,
-					errorMessage: message.errorMessage,
-					duration: message.duration,
-					ttft: message.ttft,
+					...replyUsageFields(message),
 					completion: completionRecord(prompt, message),
 				},
 				owner,

@@ -17,7 +17,7 @@
 import type { AssistantMessage } from "@oh-my-pi/pi-ai";
 import { logger } from "@oh-my-pi/pi-utils";
 import { extractTextContent } from "../commit/utils";
-import type { CompletionRecord } from "./session-entries";
+import type { CompletionRecord, ModelUsageRecord } from "./session-entries";
 import type { SessionManager } from "./session-manager";
 
 /** Session journal surface that records off-transcript model calls; journal-only managers omit it. */
@@ -56,6 +56,31 @@ export function completionRecord(prompt: string | undefined, message: AssistantM
 	return record;
 }
 
+/** The fields of a `model_usage` entry that a reply sets. Every writer takes them from here. */
+export type ReplyUsageFields = Pick<
+	ModelUsageRecord,
+	"api" | "provider" | "model" | "upstreamModel" | "usage" | "stopReason" | "errorMessage" | "duration" | "ttft"
+>;
+
+/**
+ * Copy what a `model_usage` entry records about the reply: the model that served it
+ * (`upstreamModel`, e.g. the model a router picked), its usage, and its timing. Writers
+ * use this so a field added to the reply reaches every entry.
+ */
+export function replyUsageFields(message: AssistantMessage): ReplyUsageFields {
+	return {
+		api: message.api,
+		provider: message.provider,
+		model: message.model,
+		...(message.upstreamModel ? { upstreamModel: message.upstreamModel } : {}),
+		usage: message.usage,
+		stopReason: message.stopReason,
+		errorMessage: message.errorMessage,
+		duration: message.duration,
+		ttft: message.ttft,
+	};
+}
+
 /** How {@link journalCompletion} labels and fills its entries. */
 export interface CompletionJournalOptions {
 	/** Names the call and its static prompt (`recap`, `commit:message`); a `:detail` suffix groups under its base in stats. */
@@ -89,14 +114,7 @@ export function journalCompletion(
 				{
 					purpose: options.purpose,
 					role: options.role,
-					api: message.api,
-					provider: message.provider,
-					model: message.model,
-					usage: message.usage,
-					stopReason: message.stopReason,
-					errorMessage: message.errorMessage,
-					duration: message.duration,
-					ttft: message.ttft,
+					...replyUsageFields(message),
 					...(options.usageOnly ? {} : { completion: completionRecord(prompt, message) }),
 				},
 				owner,

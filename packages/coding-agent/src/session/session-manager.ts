@@ -4207,7 +4207,7 @@ export class SessionManager {
 			this.#entries = this.#entries.filter(candidate => candidate.id !== entryId);
 			this.#index.rebuild(this.#entries);
 			if (entry.type === "message" && entry.message.role === "assistant") {
-				const { api, provider, model, usage, stopReason, errorMessage } = entry.message;
+				const { api, provider, model, upstreamModel, usage, stopReason, errorMessage } = entry.message;
 				// Off-branch like late usage: totals count every entry, and the kept
 				// chain stays made of entries collab guests replicate.
 				this.#recordEntry({
@@ -4221,6 +4221,7 @@ export class SessionManager {
 					api,
 					provider,
 					model,
+					...(upstreamModel ? { upstreamModel } : {}),
 					usage,
 					stopReason,
 					...(errorMessage === undefined ? {} : { errorMessage }),

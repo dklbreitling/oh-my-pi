@@ -28,7 +28,7 @@ import {
 import type { Settings } from "../config/settings";
 import completionProbePrompt from "../prompts/system/subagent-completion-probe.md" with { type: "text" };
 import type { AgentSession } from "../session/agent-session";
-import { completionRecord } from "../session/model-usage-journal";
+import { completionRecord, replyUsageFields } from "../session/model-usage-journal";
 import { cfgTaskCompletionProbe } from "./settings";
 
 /**
@@ -214,14 +214,7 @@ export function startCompletionProbe(options: CompletionProbeOptions): void {
 					session.sessionManager.appendModelUsage(
 						{
 							purpose: "task-completion-probe",
-							api: message.api,
-							provider: message.provider,
-							model: message.model,
-							usage: message.usage,
-							stopReason: message.stopReason,
-							errorMessage: message.errorMessage,
-							duration: message.duration,
-							ttft: message.ttft,
+							...replyUsageFields(message),
 							// The prompt is a rendered template, so only the reply is kept.
 							completion: completionRecord(undefined, message),
 						},

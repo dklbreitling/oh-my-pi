@@ -5,7 +5,7 @@ import type { MeterProvider } from "@opentelemetry/api";
 import { logger, prompt, sanitizeText } from "@oh-my-pi/pi-utils";
 import composerPredictionPrompt from "../../prompts/system/composer-prediction-user.md" with { type: "text" };
 import type { AgentViewSession } from "../../session/agent-session-handle";
-import { completionRecord } from "../../session/model-usage-journal";
+import { completionRecord, replyUsageFields } from "../../session/model-usage-journal";
 import { isAdvisorCard } from "../../session/queued-messages";
 import { cfgComposerPredictionAlternatives, cfgComposerPredictions } from "../settings";
 import type { InteractiveModeContext } from "../types";
@@ -277,15 +277,7 @@ export class ComposerPredictionController {
 			source.session.sessionManager.appendModelUsage(
 				{
 					purpose: USAGE_PURPOSE,
-					api: message.api,
-					provider: message.provider,
-					model: message.model,
-					...(message.upstreamModel ? { upstreamModel: message.upstreamModel } : {}),
-					usage: message.usage,
-					stopReason: message.stopReason,
-					errorMessage: message.errorMessage,
-					duration: message.duration,
-					ttft: message.ttft,
+					...replyUsageFields(message),
 					// The prompt is a static template, so only the reply is kept.
 					completion: completionRecord(undefined, message),
 				},

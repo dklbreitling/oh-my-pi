@@ -54,6 +54,16 @@ describe("journalCompletion", () => {
 		expect(manager.getUsageStatistics().totalTokens).toBe(USAGE.totalTokens);
 	});
 
+	// A side call through a router (`cloudflare/auto`) is only priceable by the model it picked.
+	it("records the model a router picked for the call", () => {
+		const manager = SessionManager.inMemory();
+		const routed = { ...reply("ok"), provider: "cf", model: "cloudflare/auto", upstreamModel: "claude-haiku-5-5" };
+
+		journalCompletion(manager, { purpose: "recap" })?.(routed);
+
+		expect(journaled(manager)).toMatchObject([{ model: "cloudflare/auto", upstreamModel: "claude-haiku-5-5" }]);
+	});
+
 	it("leaves out text over the cap instead of truncating it, and everything under usageOnly", () => {
 		const manager = SessionManager.inMemory();
 		const long = "x".repeat(COMPLETION_TEXT_MAX_CHARS + 1);

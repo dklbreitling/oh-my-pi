@@ -85,6 +85,8 @@ export interface JudgmentUsage {
 	api: string;
 	provider: string;
 	model: string;
+	/** The model that served the call when the response names another one, e.g. the model a router picked. */
+	upstreamModel?: string;
 	usage: Usage;
 	stopReason: AssistantMessage["stopReason"];
 	errorMessage?: string;
@@ -811,6 +813,7 @@ export class ChainJudge implements Judge {
 					api: attempt.api,
 					provider: attempt.provider,
 					model: attempt.model,
+					...(attempt.upstreamModel ? { upstreamModel: attempt.upstreamModel } : {}),
 					usage: attempt.usage,
 					stopReason: attempt.stopReason,
 					errorMessage: attempt.errorMessage,
