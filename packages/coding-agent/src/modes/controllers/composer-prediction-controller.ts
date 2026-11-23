@@ -280,6 +280,7 @@ export class ComposerPredictionController {
 					api: message.api,
 					provider: message.provider,
 					model: message.model,
+					...(message.upstreamModel ? { upstreamModel: message.upstreamModel } : {}),
 					usage: message.usage,
 					stopReason: message.stopReason,
 					errorMessage: message.errorMessage,

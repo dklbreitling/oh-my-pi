@@ -188,6 +188,8 @@ export interface ModelUsageEntry extends SessionEntryBase {
 	api: string;
 	provider: string;
 	model: string;
+	/** The model that served the call when the response names another one, e.g. the model a router picked. */
+	upstreamModel?: string;
 	usage: Usage;
 	stopReason: StopReason;
 	errorMessage?: string;
