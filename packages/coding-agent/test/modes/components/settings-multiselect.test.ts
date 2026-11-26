@@ -30,11 +30,12 @@ describe("settings section sidebar", () => {
 	it("does not toggle the selected section's first setting", () => {
 		const term = mountSettingsWindow();
 		for (let i = 0; i < 7; i++) term.press("right");
-		expect(cfgDevAutoqa.get(settings)).toBe(true);
+		// The value before any click, not the default: `PI_AUTO_QA` in the environment overrides it.
+		const initial = cfgDevAutoqa.get(settings);
 		clickLabel(term, "Developer");
-		expect(cfgDevAutoqa.get(settings)).toBe(true);
+		expect(cfgDevAutoqa.get(settings)).toBe(initial);
 		clickLabel(term, "Developer");
-		expect(cfgDevAutoqa.get(settings)).toBe(true);
+		expect(cfgDevAutoqa.get(settings)).toBe(initial);
 	});
 });
 
